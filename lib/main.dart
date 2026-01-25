@@ -192,7 +192,7 @@ class _CalculatorState extends State<Calculator> {
       await flutterTts.setVolume(1.0);
       await flutterTts.setPitch(1.0);
 
-      // Platform specific settings
+      // Platform specific settings for Android
       if (Platform.isAndroid) {
         await flutterTts.setSharedInstance(true);
       }
