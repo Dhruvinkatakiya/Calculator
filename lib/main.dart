@@ -8,14 +8,70 @@ import 'package:vibration/vibration.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:ui';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+
+// App Open Ad Manager
+class AppOpenAdManager {
+  static AppOpenAd? _appOpenAd;
+  static bool _isShowingAd = false;
+  // Replace with your real Ad Unit ID for production
+  static const String adUnitId = 'ca-app-pub-8003148820564585/7603355869'; // Test ID
+
+  static void loadAd() {
+    if (_appOpenAd != null) return;
+    
+    AppOpenAd.load(
+      adUnitId: adUnitId,
+      request: const AdRequest(),
+      adLoadCallback: AppOpenAdLoadCallback(
+        onAdLoaded: (ad) {
+          _appOpenAd = ad;
+          debugPrint('✅ App Open Ad loaded');
+        },
+        onAdFailedToLoad: (error) {
+          debugPrint('❌ App Open Ad failed to load: $error');
+        },
+      ),
+    );
+  }
+
+  static void showAdIfAvailable() {
+    if (_isShowingAd || _appOpenAd == null) return;
+    
+    _appOpenAd!.fullScreenContentCallback = FullScreenContentCallback(
+      onAdShowedFullScreenContent: (ad) {
+        _isShowingAd = true;
+        debugPrint('📱 App Open Ad showing');
+      },
+      onAdDismissedFullScreenContent: (ad) {
+        _isShowingAd = false;
+        _appOpenAd = null;
+        ad.dispose();
+        loadAd(); // Preload next ad
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        debugPrint('❌ App Open Ad failed to show: $error');
+        _isShowingAd = false;
+        _appOpenAd = null;
+        ad.dispose();
+        loadAd();
+      },
+    );
+    _appOpenAd!.show();
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize Mobile Ads SDK
+  await MobileAds.instance.initialize();
+  // Load first app open ad
+  AppOpenAdManager.loadAd();
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +83,7 @@ class MyApp extends StatelessWidget {
       showSemanticsDebugger: false,
       title: 'Advanced Calculator',
       darkTheme: ThemeData.dark().copyWith(
-        colorScheme: ColorScheme.dark(
+        colorScheme: const ColorScheme.dark(
           primary: Colors.blue,
           secondary: Colors.blueAccent,
         ),
@@ -39,13 +95,13 @@ class MyApp extends StatelessWidget {
 }
 
 class Calculator extends StatefulWidget {
-  const Calculator({Key? key}) : super(key: key);
+  const Calculator({super.key});
 
   @override
   _CalculatorState createState() => _CalculatorState();
 }
 
-class _CalculatorState extends State<Calculator> {
+class _CalculatorState extends State<Calculator> with WidgetsBindingObserver {
   String selectedLanguage = 'English';
   String currentTtsLanguage = 'en-US';
   bool isSoundEnabled = true;
@@ -158,10 +214,29 @@ class _CalculatorState extends State<Calculator> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     initTts();
     _loadHistory();
     _loadLanguage();
     _loadSoundPreference();
+    // Show ad on app start
+    Future.delayed(const Duration(milliseconds: 500), () {
+      AppOpenAdManager.showAdIfAvailable();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Show ad when app comes back to foreground
+      AppOpenAdManager.showAdIfAvailable();
+    }
   }
 
   Future<void> initTts() async {
@@ -202,7 +277,7 @@ class _CalculatorState extends State<Calculator> {
       // Wait for engine to fully bind (Android emulator needs more time)
       print('⏳ Waiting for TTS engine to bind...');
       for (int i = 0; i < 6; i++) {
-        await Future.delayed(Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 500));
         if (isTtsReady) {
           print('✅ TTS Engine bound via initHandler');
           break;
@@ -222,7 +297,7 @@ class _CalculatorState extends State<Calculator> {
 
       // Wait longer for engine to stabilize (no test speak to avoid DeadObject)
       print('⏳ Waiting for TTS engine to stabilize...');
-      await Future.delayed(Duration(milliseconds: 2000));
+      await Future.delayed(const Duration(milliseconds: 2000));
 
       // Check available languages
       var languages = await flutterTts.getLanguages;
@@ -305,7 +380,7 @@ class _CalculatorState extends State<Calculator> {
     if (!isTtsReady) {
       print('⏳ TTS not ready yet, waiting up to 2 seconds...');
       for (int i = 0; i < 4; i++) {
-        await Future.delayed(Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 500));
         if (isTtsReady) {
           print('✅ TTS became ready');
           break;
@@ -330,7 +405,7 @@ class _CalculatorState extends State<Calculator> {
 
         // Wait for engine to rebind after language change
         print('⏳ Waiting for TTS engine to rebind after language change...');
-        await Future.delayed(Duration(milliseconds: 2000));
+        await Future.delayed(const Duration(milliseconds: 2000));
       } else {
         print('🌍 TTS language already set to: $locale');
       }
@@ -353,7 +428,7 @@ class _CalculatorState extends State<Calculator> {
           if (locale != currentTtsLanguage) {
             await flutterTts.setLanguage(locale);
             currentTtsLanguage = locale;
-            await Future.delayed(Duration(milliseconds: 2000));
+            await Future.delayed(const Duration(milliseconds: 2000));
           }
           result = await flutterTts.speak(text);
           print(result == 1 ? '✅ Retry successful' : '❌ Retry failed: $result');
@@ -385,7 +460,7 @@ class _CalculatorState extends State<Calculator> {
         // Handle special cases
         if (intNum == 0) return 'zero';
         if (intNum < 0) {
-          return 'minus ' + _numberToWords(intNum.abs().toString());
+          return 'minus ${_numberToWords(intNum.abs().toString())}';
         }
 
         // For numbers up to 9999, speak naturally
@@ -500,14 +575,14 @@ class _CalculatorState extends State<Calculator> {
 
     // Thousands
     if (num >= 1000) {
-      result += ones[num ~/ 1000] + ' thousand';
+      result += '${ones[num ~/ 1000]} thousand';
       num %= 1000;
       if (num > 0) result += ' ';
     }
 
     // Hundreds
     if (num >= 100) {
-      result += ones[num ~/ 100] + ' hundred';
+      result += '${ones[num ~/ 100]} hundred';
       num %= 100;
       if (num > 0) result += ' and ';
     }
@@ -516,7 +591,7 @@ class _CalculatorState extends State<Calculator> {
     if (num >= 20) {
       result += tens[num ~/ 10];
       num %= 10;
-      if (num > 0) result += ' ' + ones[num];
+      if (num > 0) result += ' ${ones[num]}';
     } else if (num >= 10) {
       result += teens[num - 10];
     } else if (num > 0) {
@@ -1169,7 +1244,7 @@ class _CalculatorState extends State<Calculator> {
               borderRadius: BorderRadius.circular(16),
             ),
             elevation: 8,
-            color: isDark ? Color(0xFF1E1E2E) : Colors.white,
+            color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
             offset: const Offset(0, 50),
             onSelected: (String newValue) {
               setState(() {
@@ -1311,8 +1386,8 @@ class _CalculatorState extends State<Calculator> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: isDark
-                ? [Color(0xFF0A0E27), Color(0xFF1A1F3A), Color(0xFF0F1419)]
-                : [Color(0xFFE3F2FD), Color(0xFFF3E5F5), Color(0xFFFCE4EC)],
+                ? [const Color(0xFF0A0E27), const Color(0xFF1A1F3A), const Color(0xFF0F1419)]
+                : [const Color(0xFFE3F2FD), const Color(0xFFF3E5F5), const Color(0xFFFCE4EC)],
           ),
         ),
         child: Column(
@@ -1386,7 +1461,7 @@ class _CalculatorState extends State<Calculator> {
                     ),
                   ),
                   // Output display
-                  Container(
+                  SizedBox(
                     width: double.infinity,
                     height: 60,
                     child: SingleChildScrollView(
@@ -1454,7 +1529,7 @@ class _CalculatorState extends State<Calculator> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                       itemBuilder: (context) => [
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'share',
                           child: Row(
                             children: [
@@ -1464,7 +1539,7 @@ class _CalculatorState extends State<Calculator> {
                             ],
                           ),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'export',
                           child: Row(
                             children: [
@@ -1474,7 +1549,7 @@ class _CalculatorState extends State<Calculator> {
                             ],
                           ),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'clear',
                           child: Row(
                             children: [
@@ -1499,7 +1574,7 @@ class _CalculatorState extends State<Calculator> {
                       },
                     ),
                   ),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: historyList.isEmpty
                         ? Center(
