@@ -9,6 +9,86 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:ui';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+// Ads Control Service - Checks API to determine if ads should be shown
+class AdsControlService {
+  static const String apiUrl = 'https://script.googleusercontent.com/macros/echo?user_content_key=AY5xjrSZr4Zpzpefx_MUDJVJPFASXMnkkxr5J7tPTtNj38sR8mB0Fa0PqM5IXlPvqtpIyqcIJAKEPJsXtU8SJQbFQ04tt4OnKxPSaz4bAqD3n2xtxTRntIHDMA4SAcAQUsncALLDWt5PIoWYlXQaVpURpN0iDNtmiZG6Ik47Dzx424A_zer10V53SqW4I5ujhivFdRDkEDilZZZjSJzKLLbF3SXTPPr96M5KRVsE4DQTFsqm3Yq39VE40DvZthi4F8_oF7apev94chIE3Sr4XkLLHoLe7ozQCCScdIz9LLVk&lib=MH__BrZO-6yBZFmsCpXNALTBB5iDfypnN';
+  static const String appName = 'Calculator';
+  
+  static bool? _adsEnabled;
+  static DateTime? _lastFetchTime;
+  static const Duration _cacheDuration = Duration(hours: 1);
+
+  /// Fetches ads control status from API
+  static Future<bool> shouldShowAds() async {
+    // Return cached value if available and not expired
+    if (_adsEnabled != null && _lastFetchTime != null) {
+      if (DateTime.now().difference(_lastFetchTime!) < _cacheDuration) {
+        debugPrint('📋 Using cached ads status: $_adsEnabled');
+        return _adsEnabled!;
+      }
+    }
+
+    try {
+      debugPrint('🌐 Fetching ads control status from API...');
+      final response = await http.get(Uri.parse(apiUrl)).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('⏱️ API request timeout - defaulting to show ads');
+          return http.Response('timeout', 408);
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint('✅ API Response: $data');
+        
+        // Check if the response is a list or a map
+        if (data is List) {
+          // Find Calculator app in the list
+          for (var app in data) {
+            if (app['App Name'] == appName) {
+              final status = app['Status']?.toString().toLowerCase() ?? '';
+              _adsEnabled = status == 'enable';
+              _lastFetchTime = DateTime.now();
+              debugPrint('🎯 Ads status for $appName: $_adsEnabled (Status: ${app['Status']})');
+              return _adsEnabled!;
+            }
+          }
+          debugPrint('⚠️ App "$appName" not found in API response - defaulting to show ads');
+          _adsEnabled = true; // Default to enabled if app not found
+        } else if (data is Map) {
+          // If it's a single app response
+          if (data['App Name'] == appName) {
+            final status = data['Status']?.toString().toLowerCase() ?? '';
+            _adsEnabled = status == 'enable';
+            _lastFetchTime = DateTime.now();
+            debugPrint('🎯 Ads status for $appName: $_adsEnabled (Status: ${data['Status']})');
+            return _adsEnabled!;
+          }
+        }
+      } else {
+        debugPrint('❌ API request failed with status: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('❌ Error fetching ads control: $e');
+    }
+
+    // Default to showing ads if API fails
+    _adsEnabled = true;
+    _lastFetchTime = DateTime.now();
+    return true;
+  }
+
+  /// Clear cache to force refresh on next check
+  static void clearCache() {
+    _adsEnabled = null;
+    _lastFetchTime = null;
+    debugPrint('🗑️ Ads control cache cleared');
+  }
+}
 
 // App Open Ad Manager
 class AppOpenAdManager {
@@ -17,8 +97,15 @@ class AppOpenAdManager {
   // Replace with your real Ad Unit ID for production
   static const String adUnitId = 'ca-app-pub-8003148820564585/7603355869'; // Test ID
 
-  static void loadAd() {
+  static Future<void> loadAd() async {
     if (_appOpenAd != null) return;
+    
+    // Check if ads should be shown
+    final shouldShow = await AdsControlService.shouldShowAds();
+    if (!shouldShow) {
+      debugPrint('🚫 Ads are disabled by API - skipping ad load');
+      return;
+    }
     
     AppOpenAd.load(
       adUnitId: adUnitId,
@@ -35,8 +122,15 @@ class AppOpenAdManager {
     );
   }
 
-  static void showAdIfAvailable() {
+  static Future<void> showAdIfAvailable() async {
     if (_isShowingAd || _appOpenAd == null) return;
+    
+    // Check if ads should be shown
+    final shouldShow = await AdsControlService.shouldShowAds();
+    if (!shouldShow) {
+      debugPrint('🚫 Ads are disabled by API - skipping ad display');
+      return;
+    }
     
     _appOpenAd!.fullScreenContentCallback = FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
