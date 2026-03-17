@@ -36,7 +36,7 @@ class AdsControlService {
       final response = await http.get(Uri.parse(apiUrl)).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          debugPrint('⏱️ API request timeout - defaulting to show ads');
+          debugPrint('⏱️ API request timeout - defaulting to hide ads');
           return http.Response('timeout', 408);
         },
       );
@@ -57,8 +57,8 @@ class AdsControlService {
               return _adsEnabled!;
             }
           }
-          debugPrint('⚠️ App "$appName" not found in API response - defaulting to show ads');
-          _adsEnabled = true; // Default to enabled if app not found
+          debugPrint('⚠️ App "$appName" not found in API response - defaulting to hide ads');
+          _adsEnabled = false; // Default to disabled if app not found
         } else if (data is Map) {
           // If it's a single app response
           if (data['App Name'] == appName) {
@@ -76,10 +76,10 @@ class AdsControlService {
       debugPrint('❌ Error fetching ads control: $e');
     }
 
-    // Default to showing ads if API fails
-    _adsEnabled = true;
+    // Default to hiding ads if API fails
+    _adsEnabled = false;
     _lastFetchTime = DateTime.now();
-    return true;
+    return false;
   }
 
   /// Clear cache to force refresh on next check
