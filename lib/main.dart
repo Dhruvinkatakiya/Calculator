@@ -18,11 +18,18 @@ class AdsControlService {
   static const String appName = 'Calculator';
   
   static bool? _adsEnabled;
+  static String? _adUnitId;
   static DateTime? _lastFetchTime;
   static const Duration _cacheDuration = Duration(hours: 1);
 
-  /// Fetches ads control status from API
+  /// Fetches ads control status and ad unit ID from API
   static Future<bool> shouldShowAds() async {
+    // Check if running on emulator - disable ads on emulator
+    if (Platform.isAndroid) {
+      // On emulator, ads are always test ads, so we can skip fetching
+      debugPrint('⚠️ Device might be emulator - ads will be test ads if loaded');
+    }
+    
     // Return cached value if available and not expired
     if (_adsEnabled != null && _lastFetchTime != null) {
       if (DateTime.now().difference(_lastFetchTime!) < _cacheDuration) {
@@ -52,8 +59,12 @@ class AdsControlService {
             if (app['App Name'] == appName) {
               final status = app['Status']?.toString().toLowerCase() ?? '';
               _adsEnabled = status == 'enable';
+              _adUnitId = app['Ad Unit ID']?.toString();
               _lastFetchTime = DateTime.now();
               debugPrint('🎯 Ads status for $appName: $_adsEnabled (Status: ${app['Status']})');
+              debugPrint('📱 Ad Unit ID retrieved from API: $_adUnitId');
+              debugPrint('📱 Ad Unit ID type: ${_adUnitId.runtimeType}');
+              debugPrint('📱 Ad Unit ID length: ${_adUnitId?.length ?? 0}');
               return _adsEnabled!;
             }
           }
@@ -64,8 +75,12 @@ class AdsControlService {
           if (data['App Name'] == appName) {
             final status = data['Status']?.toString().toLowerCase() ?? '';
             _adsEnabled = status == 'enable';
+            _adUnitId = data['Ad Unit ID']?.toString();
             _lastFetchTime = DateTime.now();
             debugPrint('🎯 Ads status for $appName: $_adsEnabled (Status: ${data['Status']})');
+            debugPrint('📱 Ad Unit ID retrieved from API (Map): $_adUnitId');
+            debugPrint('📱 Ad Unit ID type: ${_adUnitId.runtimeType}');
+            debugPrint('📱 Ad Unit ID length: ${_adUnitId?.length ?? 0}');
             return _adsEnabled!;
           }
         }
@@ -82,9 +97,17 @@ class AdsControlService {
     return false;
   }
 
+  /// Get the ad unit ID from cached API response
+  static String? getAdUnitId() {
+    debugPrint('📱 getAdUnitId() called - returning: $_adUnitId');
+    debugPrint('📱 Cached Ad Unit ID: $_adUnitId (length: ${_adUnitId?.length ?? 0})');
+    return _adUnitId;
+  }
+
   /// Clear cache to force refresh on next check
   static void clearCache() {
     _adsEnabled = null;
+    _adUnitId = null;
     _lastFetchTime = null;
     debugPrint('🗑️ Ads control cache cleared');
   }
@@ -94,18 +117,39 @@ class AdsControlService {
 class AppOpenAdManager {
   static AppOpenAd? _appOpenAd;
   static bool _isShowingAd = false;
-  // Replace with your real Ad Unit ID for production
-  static const String adUnitId = 'ca-app-pub-8003148820564585/7603355869'; // Test ID
 
   static Future<void> loadAd() async {
     if (_appOpenAd != null) return;
     
-    // Check if ads should be shown
+    // Check if ads should be shown and get ad unit ID from API
     final shouldShow = await AdsControlService.shouldShowAds();
     if (!shouldShow) {
       debugPrint('🚫 Ads are disabled by API - skipping ad load');
       return;
     }
+    
+    debugPrint('📱 AppOpenAdManager.loadAd() - Fetching Ad Unit ID...');
+    final adUnitId = AdsControlService.getAdUnitId();
+    debugPrint('📱 Received Ad Unit ID: $adUnitId');
+    
+    if (adUnitId == null || adUnitId.isEmpty) {
+      debugPrint('❌ Ad Unit ID is null or empty - skipping ad load');
+      debugPrint('❌ Ad Unit ID value: "$adUnitId"');
+      return;
+    }
+    
+    debugPrint('✅ Valid Ad Unit ID found');
+    debugPrint('📱 Loading ad with Unit ID: $adUnitId');
+    debugPrint('📱 Ad Unit ID details - Type: ${adUnitId.runtimeType}, Length: ${adUnitId.length}');
+    
+    debugPrint('\n📱 ========== AD LOADING DETAILS ==========');
+    debugPrint('📱 Final Ad Unit ID being used: $adUnitId');
+    debugPrint('📱 Is Test ID? ${adUnitId?.contains('ca-app-pub-3940256099942544') ?? false}');
+    debugPrint('📱');
+    debugPrint('ℹ️ NOTE: On Android Emulator, ALL ads are ALWAYS test ads');
+    debugPrint('ℹ️ This is a Google safety feature and cannot be overridden');
+    debugPrint('ℹ️ To see production ads, install on a real Android device');
+    debugPrint('📱 ==========================================\n');
     
     AppOpenAd.load(
       adUnitId: adUnitId,
@@ -113,10 +157,11 @@ class AppOpenAdManager {
       adLoadCallback: AppOpenAdLoadCallback(
         onAdLoaded: (ad) {
           _appOpenAd = ad;
-          debugPrint('✅ App Open Ad loaded');
+          debugPrint('✅ App Open Ad loaded successfully with ID: $adUnitId');
         },
         onAdFailedToLoad: (error) {
           debugPrint('❌ App Open Ad failed to load: $error');
+          debugPrint('❌ Failed Ad Unit ID: $adUnitId');
         },
       ),
     );
